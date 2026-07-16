@@ -32,62 +32,143 @@ Transcript:
 
     prompt = f"""
 You are a Senior QA Analyst for an EMI Recovery Voicebot.
-
 IMPORTANT
-
 All conversations below already belong to the SAME top-level category.
+DO NOT classify the top-level category again.
+Your ONLY job is to identify the SINGLE MOST APPROPRIATE behavioural subgroup for each conversation.
+Always identify the PRIMARY behaviour of the customer, NOT simply the final outcome of the call.
+-------------------------
+PRIORITY ORDER
+-------------------------
+If multiple behaviours exist, ALWAYS choose the highest priority behaviour.
+Priority (highest → lowest):
+1. Fraud / Scam Suspicion
+2. Payment Record Dispute
+3. Outstanding Amount Dispute
+4. Already Paid Claim
+5. Loan Ownership / Account Dispute
+6. Wrong Number
+7. Family Member Answered
+8. Settlement Request
+9. Callback Request
+10. Silent / Disconnected
+11. Payment Promise
 
-DO NOT classify the category again.
+Payment Promise should ONLY be selected when there is NO stronger dispute behaviour.
+-------------------------
+IMPORTANT RULES
+-------------------------
+If customer says things like:
+"I already paid."
+"I gave money to your executive."
+"I paid Ankit."
+"I already deposited money."
+"I have already paid an installment."
+"Our records are wrong."
+"Outstanding amount is incorrect."
+"I don't trust this amount."
+"You are asking again although I already paid."
 
-Your only job is to discover the behavioural subgroup each conversation belongs to.
+THEN classify as one of:
+• Payment Record Dispute
+• Outstanding Amount Dispute
+• Already Paid Claim
 
-Create business-friendly subgroup names.
+NOT Payment Promise.
+Even if later in the conversation the customer says:
+"I'll pay next week."
+"I'll pay on 12th."
+"I'll pay one installment."
+DO NOT classify as Payment Promise if the root issue is still a dispute.
+-------------------------
+EXAMPLES
+-------------------------
+Example 1
+Customer:
+"I already paid ₹2400 to Ankit."
+Bot:
+"Our records still show dues."
+Customer:
+"I'll pay on 12th."
 
-Examples:
+Subgroup:
+Payment Record Dispute
 
-Festival Based Payment Promise
+NOT:
+Payment Promise
 
+
+Example 2
+Customer:
+"I already cleared my payment."
+Bot:
+"Our records show pending."
+
+Subgroup:
+Already Paid Claim
+
+Example 3
+Customer:
+"The outstanding amount is wrong."
+
+Subgroup:
+Outstanding Amount Dispute
+
+
+Example 4
+Customer:
+"This looks like fraud."
+
+Subgroup:
+Fraud / Scam Suspicion
+
+
+Example 5
+Customer:
+"I'll pay after salary on 5th."
+Bot:
+"Okay."
+
+Subgroup:
 Salary Based Payment Promise
 
-Already Paid
 
-Customer Requested Callback
+Example 6
+Customer:
+"I'll pay after Diwali."
 
-Settlement Request
+Subgroup:
+Festival Based Payment Promise
 
-Silent Customer
 
-Disconnected Call
-
+-------------------------
+NAMING RULES
+-------------------------
+Use short, business-friendly subgroup names.
+Reuse existing wording whenever possible.
+Examples of valid subgroup names:
+Fraud / Scam Suspicion
+Payment Record Dispute
+Outstanding Amount Dispute
+Already Paid Claim
+Salary Based Payment Promise
+Festival Based Payment Promise
 Payment Next Week
-
 Payment Next Month
-
-Family Member Answered
-
+Settlement Request
+Customer Requested Callback
 Wrong Number
-
-etc.
-
-Rules
-
-- Similar conversations MUST receive exactly the same subgroup name.
-
-- Never invent a new wording if one already exists.
-
-- Keep subgroup names short.
-
+Family Member Answered
+Silent Customer
+Disconnected Call
 Return ONLY valid JSON.
-
 [
 {{
-"conversation_id":123,
-"subgroup":"Festival Based Payment Promise"
+    "conversation_id":123,
+    "subgroup":"Payment Record Dispute"
 }}
 ]
-
 Conversations
-
 {convo_block}
 """
     print(">>> Calling LLM...")
