@@ -1,83 +1,21 @@
 import json
+import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.aiml.naming import _call_llm  
 
 
-# def classify_batch(convo_batch: list[dict]) -> list[dict]:
-#     """
-#     Sends one batch of conversations to the LLM. The LLM decides category
-#     AND subgroup for each one, using the existing 'Conclusion' tag only as
-#     a hint it can agree or disagree with.
-#     """
-#     convo_block = "\n\n".join(
-#         f"--- Conversation id={c['conversation_id']} (system hint: \"{c['top_level_category'] or 'none'}\") ---\n"
-#         f"{c['conversation_text'][:1200]}"
-#         for c in convo_batch
-#     )
+def _extract_json(raw: str) -> str:
+    """
+    Strips markdown code fences (```json ... ``` or ``` ... ```) that LLMs
+    sometimes wrap around JSON output, so json.loads() doesn't choke on them.
+    """
+    cleaned = raw.strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
 
-#     prompt = f"""You are analyzing debt-collection voicebot call transcripts (Hinglish, EMI recovery).
-
-# For each conversation below, decide its outcome CATEGORY (e.g. Positive, Negative, Neutral, Already Paid,
-# Callback, Doubtful, Denied, Wrong Number, or your own better category if none fit) and a specific SUBGROUP
-# within that category describing the distinct pattern (e.g. "Timeline commitment - Diwali", "Timeline
-# commitment - 1 week", "Vague agreement, no date given", "Silent, no response").
-
-# Each conversation also shows a "system hint" — the category our existing system guessed. Use it as a
-# reference, but decide based on the actual conversation content; override it if the content disagrees.
-
-# Respond with ONLY a JSON array, one object per conversation, in this exact shape:
-# [{{"conversation_id": 123, "category": "...", "subgroup": "...", "subgroup_definition": "one line"}}]
-
-# {convo_block}"""
-
-#     response = _call_llm(prompt, max_tokens=2000)
-#     raw = (response.choices[0].message.content or "").strip()
-#     try:
-#         parsed = json.loads(raw)
-#         return parsed if isinstance(parsed, list) else []
-#     except json.JSONDecodeError:
-#         print(f"    [direct_pipeline] batch failed to parse, raw={raw[:150]!r}")
-#         return []
-
-# def reconcile_subgroups(all_classifications: list[dict]) -> dict:
-#     """
-#     Different batches may invent slightly different names for the same
-#     real pattern. This asks the LLM once to merge near-duplicates into a
-#     canonical taxonomy: {raw_name: canonical_name}
-#     """
-#     unique_pairs = {}
-#     for c in all_classifications:
-#         key = (c.get("category"), c.get("subgroup"))
-#         if key not in unique_pairs and c.get("subgroup"):
-#             unique_pairs[key] = c.get("subgroup_definition", "")
-
-#     if not unique_pairs:
-#         return {}
-
-#     listing = "\n".join(
-#         f'- category="{cat}", subgroup="{sub}", definition="{definition}"'
-#         for (cat, sub), definition in unique_pairs.items()
-#     )
-
-#     prompt = f"""Here is a list of (category, subgroup) pairs discovered across different batches of the
-# same dataset. Some subgroups are near-duplicates describing the same real pattern with different wording
-# (e.g. "Payment Deferral" and "Delayed Payment Promise" might be the same thing).
-
-# Merge near-duplicates within the SAME category into one canonical subgroup name. Keep genuinely distinct
-# subgroups separate. Respond with ONLY a JSON object mapping each original subgroup name to its canonical
-# name (use the same name if it doesn't need merging):
-# {{"original_subgroup_name": "canonical_subgroup_name", ...}}
-
-# {listing}"""
-
-#     response = _call_llm(prompt, max_tokens=1500)
-#     raw = (response.choices[0].message.content or "").strip()
-#     try:
-#         return json.loads(raw)
-#     except json.JSONDecodeError:
-        # return {}  
         
 def discover_subgroups(convo_batch: list[dict]) -> list[dict]:
     print(">>> discover_subgroups started")
@@ -153,17 +91,17 @@ Conversations
 {convo_block}
 """
     print(">>> Calling LLM...")
-    response = _call_llm(prompt,max_tokens=512)
+    response = _call_llm(prompt, max_tokens=500)
     print(">>> LLM returned")
 
-    raw=(response.choices[0].message.content or "").strip()
+    raw = (response.choices[0].message.content or "").strip()
 
     try:
-        return json.loads(raw)
-    except:
-        print(raw)
-        return []      
-    
+        return json.loads(_extract_json(raw))
+    except Exception:
+        print(f"    [discover_subgroups] failed to parse, raw={raw!r}")
+        return []
+
 
 def analyze_subgroup(subgroup_name: str, conversations: list[dict]) -> dict:
 
@@ -184,33 +122,36 @@ You are given multiple conversations that all belong to the subgroup:
 
 {subgroup_name}
 
-Analyze them deeply.
+Analyze them deeply, but be CONCISE. Keep every string field short
+(1 sentence max). This is a hard constraint.
 
-Return ONLY valid JSON.
+Return ONLY valid JSON, no markdown fences, matching this exact shape.
+Do not exceed these list lengths: common_patterns max 3 items,
+breakdown max 3 items, insights max 3 items.
 
 {{
-"summary":"...",
+"summary":"one sentence",
 
-"customer_behavior":"...",
+"customer_behavior":"one sentence",
 
 "payment_intent":"High/Medium/Low",
 
 "common_patterns":[
-"...",
-"..."
+"short phrase",
+"short phrase"
 ],
 
 "breakdown":[
 {{
 "name":"...",
-"description":"...",
+"description":"one short phrase",
 "count":0
 }}
 ],
 
 "insights":[
-"...",
-"..."
+"short phrase",
+"short phrase"
 ]
 }}
 
@@ -219,15 +160,19 @@ Conversations
 {convo_text}
 """
 
-    response = _call_llm(prompt, max_tokens=512)
+    # Mentor wants max_tokens kept under 512. The old unbounded prompt
+    # ("...", "...") let the LLM ramble past that and get truncated mid-JSON,
+    # which fails json.loads() even with fence-stripping. Fix is a tighter
+    # prompt (capped array lengths, "1 sentence max") rather than more tokens.
+    response = _call_llm(prompt, max_tokens=500) 
 
     raw = (response.choices[0].message.content or "").strip()
 
     try:
-        return json.loads(raw)
+        return json.loads(_extract_json(raw))
     except Exception:
-        print(raw)
-        return {}      
+        print(f"    [analyze_subgroup] failed to parse, raw={raw!r}")
+        return {}
 
 
 def run_direct_pipeline(
@@ -409,8 +354,8 @@ def run_direct_pipeline(
         "total": len(usable),
         "clusters": clusters
     }
-
+ 
     notify("Finished.")
-    
-    print(json.dumps(response, indent=2))
+
+    print(json.dumps(response, indent=2, ensure_ascii=False))
     return response
