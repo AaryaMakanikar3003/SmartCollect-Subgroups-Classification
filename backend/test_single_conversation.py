@@ -74,7 +74,11 @@ result = discover_subgroups([conversation])
 
 print(json.dumps(result, indent=2, ensure_ascii=False))
 
-subgroup = result[0]["subgroup"]
+# subgroup = result[0]["subgroup"]
+if isinstance(result, list):
+    subgroup = result[0]["subgroup"]
+else:
+    subgroup = result["subgroup"]
 
 print("\nRunning subgroup analysis...\n")
 
