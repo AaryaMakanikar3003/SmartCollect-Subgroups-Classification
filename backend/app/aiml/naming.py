@@ -233,33 +233,38 @@ def _get_client() -> OpenAI:
                     "MRAKYTICS_LLM_BASE_URL not set. Example: http://<host>:8100/v1"
                 )
 
-            _client = OpenAI(api_key=api_key, base_url=base_url, timeout=240.0)
+            _client = OpenAI(api_key=api_key, base_url=base_url, timeout=600.0)
             print(f"    [naming] using Mrakytics LLM Gateway model: {_MODEL}")
 
     return _client
 
 
-def _call_llm(prompt: str, max_tokens: int, retries: int = 3):
-    """
-    Calls the OpenAI-compatible Mrakytics LLM Gateway with retry/backoff for
-    temporary network/API failures.
-    """
+def _call_llm(prompt: str, max_tokens: int, retries: int = 3, semaphore=None):
     client = _get_client()
     last_error = None
 
     for attempt in range(1, retries + 1):
+        if semaphore:
+            semaphore.acquire()
         try:
-            return client.chat.completions.create(
+            print(f"    [naming] sending request (attempt {attempt}, max_tokens={max_tokens})...")
+            start = time.time()
+            result = client.chat.completions.create(
                 model=_MODEL,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=240.0,
+                timeout=600.0,
             )
+            print(f"    [naming] got response in {time.time() - start:.1f}s")
+            return result
         except (APIConnectionError, APIError) as e:
             last_error = e
             wait = attempt * 2
             print(repr(e))
             time.sleep(wait)
+        finally:
+            if semaphore:
+                semaphore.release()
 
     raise last_error
 

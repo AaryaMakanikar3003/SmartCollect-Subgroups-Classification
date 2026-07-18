@@ -955,3 +955,74 @@ background:white;
 .close-btn {
   margin-top: 20px;
 }
+
+/* ---------- Dynamic tree (arbitrary depth: subgroup -> bucket -> breakdown -> ...) ---------- */
+
+.root-tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.tree-node {
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.tree-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fafafa;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: #14161f;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.tree-toggle:hover { background: #f0f0f0; }
+
+.tree-toggle-name { font-weight: 600; flex: 1; color: #14161f; }
+.tree-toggle-count { color: #14161f; font-weight: 600; }
+.tree-toggle-chevron { color: #14161f; }
+
+.tree-node-desc {
+  margin: 0;
+  padding: 0 16px 10px;
+  font-size: 0.82rem;
+  color: #666e80;
+  line-height: 1.4;
+  background: #fafafa;
+}
+
+.tree-node-body {
+  padding: 10px 14px 14px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* nested levels get indented and slightly recessed so depth is visible
+   however far the tree actually goes */
+.tree-node .tree-node {
+  margin-left: 14px;
+  background: #fbfbfd;
+}
+
+.tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conversation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
