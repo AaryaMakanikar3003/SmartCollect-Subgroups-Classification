@@ -11,14 +11,10 @@
 # # parallelism together). Tune this to whatever your gateway can actually
 # # handle concurrently - raising it doesn't change any analysis output, only
 # # how many requests can be in flight at once.
-# _MAX_CONCURRENT_LLM_CALLS = 2
+# _MAX_CONCURRENT_LLM_CALLS = 1
 # _llm_semaphore = threading.Semaphore(_MAX_CONCURRENT_LLM_CALLS)
 
 
-# # def _call_llm_guarded(prompt: str, max_tokens: int):
-# #     with _llm_semaphore:
-# #         return _call_llm(prompt, max_tokens=max_tokens)
-# # direct_pipeline.py
 # def _call_llm_guarded(prompt: str, max_tokens: int):
 #     return _call_llm(prompt, max_tokens=max_tokens, semaphore=_llm_semaphore)
 
@@ -164,6 +160,14 @@
 #     response = _call_llm_guarded(prompt, max_tokens=500)
 #     raw = (response.choices[0].message.content or "").strip()
 #     final = _safe_parse_list(raw, "_canonicalize_labels")
+
+#     # Drop any item missing a usable "name" right here, at the source.
+#     # This is the ONE place that matters - _classify_batch, _normalize_to_label,
+#     # and build_dynamic_tree all do direct l["name"] access downstream with no
+#     # further safety net, so a malformed LLM response (missing "name") would
+#     # otherwise crash the whole run with KeyError('name') wherever it's first
+#     # touched. Filtering here means nothing malformed ever reaches those spots.
+#     final = [l for l in final if l.get("name") and l["name"].strip()]
 
 #     if not final:
 #         return [{"name": "Other", "description": "Does not fit a clearer pattern."}]
@@ -345,7 +349,8 @@
 #     labels, groups = discover_and_classify(
 #         conversations, context_path, max_workers=max_workers, notify=notify
 #     )
-#     # real_labels = [l for l in labels if groups.get(l["name"])]
+#     # kept as a second safety net even though _canonicalize_labels now filters
+#     # at the source - harmless belt-and-braces, costs nothing
 #     real_labels = [l for l in labels if l.get("name") and groups.get(l["name"])]
 
 #     if len(real_labels) <= 1:
@@ -461,6 +466,7 @@
 
 
 
+
 import json
 import re
 import threading
@@ -474,7 +480,7 @@ from app.aiml.naming import _call_llm
 # parallelism together). Tune this to whatever your gateway can actually
 # handle concurrently - raising it doesn't change any analysis output, only
 # how many requests can be in flight at once.
-_MAX_CONCURRENT_LLM_CALLS = 1
+_MAX_CONCURRENT_LLM_CALLS = 2
 _llm_semaphore = threading.Semaphore(_MAX_CONCURRENT_LLM_CALLS)
 
 
@@ -625,11 +631,10 @@ Return ONLY valid JSON, no markdown:
     final = _safe_parse_list(raw, "_canonicalize_labels")
 
     # Drop any item missing a usable "name" right here, at the source.
-    # This is the ONE place that matters - _classify_batch, _normalize_to_label,
-    # and build_dynamic_tree all do direct l["name"] access downstream with no
-    # further safety net, so a malformed LLM response (missing "name") would
-    # otherwise crash the whole run with KeyError('name') wherever it's first
-    # touched. Filtering here means nothing malformed ever reaches those spots.
+    # _classify_batch and _normalize_to_label both do direct l["name"]
+    # access downstream with no further safety net, so a malformed LLM
+    # response (missing "name") would otherwise crash the whole run with
+    # KeyError('name') wherever it's first touched.
     final = [l for l in final if l.get("name") and l["name"].strip()]
 
     if not final:
@@ -770,7 +775,10 @@ def build_dynamic_tree(
     context_path: list[tuple[str, str]],
     level_name: str = "subgroup",
     depth: int = 0,
-    max_depth: int = 3,
+    max_depth: int = 20,  # effectively unbounded - the real stop condition is
+                          # min_conversations_to_split or the LLM collapsing to
+                          # a single pattern, whichever happens first. 20 is just
+                          # a hard safety ceiling so nothing can recurse forever.
     min_conversations_to_split: int = 6,
     sample_count: int = 5,
     max_workers: int = 4,
@@ -784,9 +792,9 @@ def build_dynamic_tree(
     top-level category is hardcoded.
 
     Stops recursing into a branch when:
-      - max_depth is reached, or
-      - too few conversations remain to meaningfully split, or
-      - discovery collapses to a single real label (nothing further to say)
+      - too few conversations remain to meaningfully split (min_conversations_to_split), or
+      - discovery collapses to a single real label (nothing further to say), or
+      - max_depth is reached (safety ceiling, not meant to be hit in practice)
     """
     samples = [
         {"conversation_id": c["conversation_id"], "preview": c["conversation_text"]}
@@ -812,8 +820,6 @@ def build_dynamic_tree(
     labels, groups = discover_and_classify(
         conversations, context_path, max_workers=max_workers, notify=notify
     )
-    # kept as a second safety net even though _canonicalize_labels now filters
-    # at the source - harmless belt-and-braces, costs nothing
     real_labels = [l for l in labels if l.get("name") and groups.get(l["name"])]
 
     if len(real_labels) <= 1:
@@ -865,7 +871,7 @@ def run_direct_pipeline(
     batch_size: int = 5,
     max_workers: int = 4,
     on_progress=None,
-    max_depth: int = 3,
+    max_depth: int = 20,
     min_conversations_to_split: int = 6,
 ):
     def notify(msg):
