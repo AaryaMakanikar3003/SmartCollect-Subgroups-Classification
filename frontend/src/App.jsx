@@ -20,6 +20,57 @@
 //   return "neutral";
 // }
 
+// // Renders one node of the dynamic tree (subgroup -> bucket -> breakdown -> ...
+// // however deep it actually goes, since nothing about depth is fixed anymore).
+// // Leaf nodes (no children) show sample conversations instead of a sub-list.
+// function TreeNode({ node, path, openPaths, onToggle }) {
+//   const key = path.join("/");
+//   const isOpen = !!openPaths[key];
+//   const hasChildren = node.children && node.children.length > 0;
+
+//   return (
+//     <div className="tree-node">
+//       <button className="tree-toggle" onClick={() => onToggle(key)}>
+//         <span className="tree-toggle-name">{node.name}</span>
+//         <span className="tree-toggle-count mono">{node.count}</span>
+//         <span className="tree-toggle-chevron">{isOpen ? "▾" : "▸"}</span>
+//       </button>
+
+//       {node.description && <p className="tree-node-desc">{node.description}</p>}
+
+//       {isOpen && (
+//         <div className="tree-node-body">
+//           {hasChildren ? (
+//             <div className="tree-children">
+//               {node.children.map((child, i) => (
+//                 <TreeNode
+//                   key={i}
+//                   node={child}
+//                   path={[...path, i]}
+//                   openPaths={openPaths}
+//                   onToggle={onToggle}
+//                 />
+//               ))}
+//             </div>
+//           ) : (
+//             <ul className="conversation-list">
+//               {(node.sample_conversations || []).length === 0 && (
+//                 <li className="empty-state">No sample conversations.</li>
+//               )}
+//               {(node.sample_conversations || []).map((ex, k) => (
+//                 <details key={k} className="conversation-card">
+//                   <summary>Convo ID: {ex.conversation_id}</summary>
+//                   <pre>{ex.preview}</pre>
+//                 </details>
+//               ))}
+//             </ul>
+//           )}
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
 // function App() {
 //   const [banks, setBanks] = useState([]);
 //   const [campaigns, setCampaigns] = useState([]);
@@ -41,15 +92,16 @@
 //   const [directResult, setDirectResult] = useState(null);
 //   const [selectedCluster, setSelectedCluster] = useState(null);
 
-//   const [openBuckets, setOpenBuckets] = useState({});
+//   // path (as "0/1/2" strings) -> open/closed, reset each time a new cluster modal opens
+//   const [openPaths, setOpenPaths] = useState({});
 
 //   const openCluster = (cluster) => {
 //     setSelectedCluster(cluster);
-//     setOpenBuckets({});
+//     setOpenPaths({});
 //   };
 
-//   const toggleBucket = (bucketName) => {
-//     setOpenBuckets((prev) => ({ ...prev, [bucketName]: !prev[bucketName] }));
+//   const toggleOpenPath = (key) => {
+//     setOpenPaths((prev) => ({ ...prev, [key]: !prev[key] }));
 //   };
 
 //   const [modal, setModal] = useState(null);
@@ -359,7 +411,6 @@
 //                       <div
 //                         key={i}
 //                         className="cluster-card clickable"
-//                         // onClick={() => setSelectedCluster(cluster)}
 //                         onClick={() => openCluster(cluster)}
 //                       >
 //                         <div className="cluster-header">
@@ -449,80 +500,58 @@
 //       )}
 
 //       {selectedCluster && (
-//   <div className="modal-overlay" onClick={() => setSelectedCluster(null)}>
-//     <div className="cluster-details-modal" onClick={(e) => e.stopPropagation()}>
-//       <h2>{selectedCluster.name}</h2>
-//       <p><strong>Total conversations:</strong> {selectedCluster.count}</p>
+//         <div className="modal-overlay" onClick={() => setSelectedCluster(null)}>
+//           <div className="cluster-details-modal" onClick={(e) => e.stopPropagation()}>
+//             <h2>{selectedCluster.name}</h2>
+//             <p><strong>Total conversations:</strong> {selectedCluster.count}</p>
+//             {selectedCluster.description && <p>{selectedCluster.description}</p>}
 
-//       {selectedCluster.buckets && selectedCluster.buckets.length > 0 ? (
-//         <>
-//           <h3>Buckets</h3>
-//           <div className="bucket-list">
-//             {selectedCluster.buckets.map((bucket, i) => {
-//               const isOpen = !!openBuckets[bucket.name];
-//               return (
-//                 <div key={i} className="bucket-block">
-//                   <button
-//                     className="bucket-toggle"
-//                     onClick={() => toggleBucket(bucket.name)}
-//                   >
-//                     <span className="bucket-toggle-name">{bucket.name}</span>
-//                     <span className="bucket-toggle-count mono">{bucket.count}</span>
-//                     <span className="bucket-toggle-chevron">{isOpen ? "▾" : "▸"}</span>
-//                   </button>
-
-//                   {isOpen && (
-//                     <ul className="breakdown-list">
-//                       {(bucket.breakdown || []).length === 0 && (
-//                         <li className="empty-state">No breakdown available for this bucket.</li>
-//                       )}
-//                       {(bucket.breakdown || []).map((b, j) => (
-//                         <li key={j} className="breakdown-item">
-//                           <div className="breakdown-row">
-//                             <span>{b.name}</span>
-//                             <span className="mono">{b.count}</span>
-//                           </div>
-//                           {(b.sample_conversations || []).map((ex, k) => (
-//                             <details key={k} className="conversation-card">
-//                               <summary>Convo ID: {ex.conversation_id}</summary>
-//                               <pre>{ex.preview}</pre>
-//                             </details>
-//                           ))}
-//                         </li>
-//                       ))}
-//                     </ul>
-//                   )}
+//             {selectedCluster.children && selectedCluster.children.length > 0 ? (
+//               <>
+//                 <h3>Breakdown</h3>
+//                 <div className="tree-children root-tree-children">
+//                   {selectedCluster.children.map((child, i) => (
+//                     <TreeNode
+//                       key={i}
+//                       node={child}
+//                       path={[i]}
+//                       openPaths={openPaths}
+//                       onToggle={toggleOpenPath}
+//                     />
+//                   ))}
 //                 </div>
-//               );
-//             })}
-//           </div>
-//         </>
-//       ) : (
-//         <>
-//           <h3>Sample Conversations</h3>
-//           {(selectedCluster.sample_conversations || []).map((ex, index) => (
-//             <details key={index} className="conversation-card">
-//               <summary>Conversation ID: {ex.conversation_id}</summary>
-//               <pre>{ex.preview}</pre>
-//             </details>
-//           ))}
-//         </>
-//       )}
+//               </>
+//             ) : (
+//               <>
+//                 <h3>Sample Conversations</h3>
+//                 {(selectedCluster.sample_conversations || []).map((ex, index) => (
+//                   <details key={index} className="conversation-card">
+//                     <summary>Conversation ID: {ex.conversation_id}</summary>
+//                     <pre>{ex.preview}</pre>
+//                   </details>
+//                 ))}
+//               </>
+//             )}
 
-//       <button
-//         className="modal-btn modal-btn-primary close-btn"
-//         onClick={() => setSelectedCluster(null)}
-//       >
-//         Close
-//       </button>
-//     </div>
-//   </div>
-// )}
+//             <button
+//               className="modal-btn modal-btn-primary close-btn"
+//               onClick={() => setSelectedCluster(null)}
+//             >
+//               Close
+//             </button>
+//           </div>
+//         </div>
+//       )}
 //     </div>
 //   );
 // }
 
 // export default App;
+
+
+
+
+
 
 
 
@@ -616,6 +645,9 @@ function TreeNode({ node, path, openPaths, onToggle }) {
 function App() {
   const [banks, setBanks] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
+
+  // selectedBank now encodes "<source>:<bank_id>" so we always know which
+  // DB a chosen bank/campaign lives in, since ids can collide across DBs.
   const [selectedBank, setSelectedBank] = useState("");
   const [selectedCampaign, setSelectedCampaign] = useState("");
   const [fromDate, setFromDate] = useState(defaultFromDate());
@@ -649,6 +681,11 @@ function App() {
   const [modal, setModal] = useState(null);
   const [limitInput, setLimitInput] = useState("");
 
+  // derive real source + bank_id from the combined "<source>:<bank_id>" value
+  const [selectedSource, selectedBankId] = selectedBank
+    ? selectedBank.split(":")
+    : ["", ""];
+
   useEffect(() => {
     fetch(`${API_BASE}/banks`)
       .then((res) => res.json())
@@ -669,7 +706,7 @@ function App() {
     if (!selectedBank) return;
 
     setLoadingCampaigns(true);
-    fetch(`${API_BASE}/campaigns?bank_id=${selectedBank}`)
+    fetch(`${API_BASE}/campaigns?bank_id=${selectedBankId}&source=${selectedSource}`)
       .then((res) => {
         if (!res.ok) throw new Error(`No campaigns found (status ${res.status})`);
         return res.json();
@@ -695,7 +732,7 @@ function App() {
     setSummary(null);
     setDirectResult(null);
 
-    const url = `${API_BASE}/conversations/summary?campaign_id=${selectedCampaign}&from_date=${fromDate}&to_date=${toDate}`;
+    const url = `${API_BASE}/conversations/summary?campaign_id=${selectedCampaign}&from_date=${fromDate}&to_date=${toDate}&source=${selectedSource}`;
 
     fetch(url)
       .then((res) => {
@@ -725,6 +762,7 @@ function App() {
           to_date: toDate,
           category,
           limit: limit ?? null,
+          source: selectedSource,
         })
       );
     };
@@ -812,7 +850,9 @@ function App() {
               <select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)}>
                 <option value="">Select a bank...</option>
                 {banks.map((b) => (
-                  <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>
+                  <option key={`${b.source}-${b.bank_id}`} value={`${b.source}:${b.bank_id}`}>
+                    {b.bank_name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1089,3 +1129,4 @@ function App() {
 }
 
 export default App;
+
